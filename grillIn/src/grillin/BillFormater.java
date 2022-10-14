@@ -8,11 +8,13 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.RandomAccessFile;
 import java.io.StringWriter;
 import java.math.RoundingMode;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -182,14 +184,17 @@ public class BillFormater {
 
 		Properties prop = null;
 		String filePath = null;
+		String reportfilePath = null;
 		int billNumber = 21226;
 		try {
 			prop = getProperties();
 			System.out.println(prop);
 			if(prop==null) {
 				filePath = "/opt/pop/conf";
+				reportfilePath = "/opt/pop/conf";
 			} else {
-				filePath = prop.getProperty("File.path");
+				filePath = prop.getProperty("File.path")!=null && !("".equals(prop.getProperty("File.path"))) ? prop.getProperty("File.path") : "/opt/pop/conf";
+				reportfilePath = prop.getProperty("Report.file.path")!=null && !("".equals(prop.getProperty("Report.file.path"))) ? prop.getProperty("Report.file.path") : "/opt/pop/conf";
 			}
 			
 			billNumber = prop.getProperty("Bill.number.start") !=null ? 
@@ -198,6 +203,7 @@ public class BillFormater {
 		} catch (Exception e2) {
 			System.out.println("Properties file is not present. Taking default value in this case.");
 			filePath = "/opt/pop/conf";
+			reportfilePath = "/opt/pop/conf";
 		}
 		System.out.println("---------Program Started----------");
 		System.out.println("FilePath : "+ filePath);
@@ -291,10 +297,7 @@ public class BillFormater {
 						billData.setCgst(df.format(Float.parseFloat(billData.getGst())/2));
 						billData.setSgst(df.format(Float.parseFloat(billData.getGst())/2));
 
-						System.out.println(billData.getSubTotalAmt());
-						System.out.println(billData.getGst());
-						
-						float totalAmt = Float.parseFloat(billData.getSubTotalAmt()) + Float.parseFloat(billData.getGst());
+						float totalAmt = Float.parseFloat(billData.getSubTotalAmt().replaceAll(",", "")) + Float.parseFloat(billData.getGst().replaceAll(",", ""));
 
 						billData.setTotalInvoiceValue(Math.floor(totalAmt) + "");
 						billData.setRounfOff(df.format(Float.parseFloat(billData.getTotalInvoiceValue()) - totalAmt));
@@ -379,25 +382,45 @@ public class BillFormater {
 
 						}
 						System.out.println("Formating Ends.... ");
+						//logging into report start
+						File logFile = new File(reportfilePath+"/"+LocalDate.now().getYear()+"_"+LocalDate.now().getMonthValue());
+						try(FileWriter writer = new FileWriter(logFile, true)){
+							writer.append(dateFormat.format(date) + " : " + billData.toString().replaceAll("\n", " "));
+							writer.append(System.getProperty("line.separator"));
+							writer.flush();
+							writer.close();
+						}catch(Exception e) {
+							e.printStackTrace();
+						}
+						//logging into report ends
 					}
 
 				} catch(Exception e) {
 					e.printStackTrace();
-					try(FileWriter fw = new FileWriter(billFile, true);
-							BufferedWriter bw = new BufferedWriter(fw);
-							PrintWriter out = new PrintWriter(bw)) {
-						out.println("Got Exception : Please try again with correct format.");
-						StringWriter sw = new StringWriter();
-						PrintWriter pw = new PrintWriter(sw);
-						e.printStackTrace(pw);
-						out.println(sw.toString());
-						fw.flush();
-					} catch (IOException e1) {
-						e1.printStackTrace();
-					}
-					try {
-						Thread.sleep(2000);
-					} catch (InterruptedException ex) {
+					try(BufferedReader read= new BufferedReader(new FileReader(billFile))){
+						ArrayList<String> list = new ArrayList<>();
+						
+						String dataRow = read.readLine(); 
+						while (dataRow != null){
+							list.add(dataRow);
+							dataRow = read.readLine(); 
+						}
+						
+						try(FileWriter writer = new FileWriter(billFile)){
+							writer.append("Got Exception : Please try again with correct format.\n");
+							StringWriter sw = new StringWriter();
+							PrintWriter pw = new PrintWriter(sw);
+							e.printStackTrace(pw);
+							writer.append(sw.toString());
+							for (int i = 0; i < list.size(); i++){
+								writer.append(System.getProperty("line.separator"));
+								writer.append(list.get(i));
+							}
+							writer.flush();
+							writer.close();
+						}
+						
+					}catch(Exception ex) {
 						ex.printStackTrace();
 					}
 				}
